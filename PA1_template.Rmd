@@ -1,0 +1,174 @@
+---
+title: "PA1_template"
+author: "Maria Lee-Salisbury"
+date: "Sunday, February 08, 2015"
+output: html_document
+---
+
+### About this R Markdown document:
+This is an R Markdown document for the study of personal movement using activity monitoring devices such as Fitbit, Nike Fuelband, or Jawbone.  
+
+### Loading and preprocessing the data
+The first step is to download the data from an external source and then load it into a dataframe
+```{r}
+
+if (!file.exists("./Exploratory Data Analysis")) {
+        dir.create("./Exploratory Data Analysis")
+}
+
+projectFile <- "http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+download.file(projectFile, destfile = "./Reproducible Research/Activity_Dataset.zip")
+unzip("./Reproducible Research/Activity_Dataset.zip", files = NULL, 
+      exdir = "./Reproducible Research", 
+      overwrite = TRUE)
+
+data <- read.csv("./Reproducible Research/activity.csv")
+
+```
+
+### What is mean total number of steps taken per day?
+
+In this next step, the raw data will be cleaned up so as to discard any rows with NA values in the "steps" column.  From there, the total number of steps per date grouping will be calculated using the ddply function from the plyr package.  
+
+``` {r}
+library(plyr)
+total.steps <- ddply(na.omit(data), c("date"), summarize, totalSteps = sum(steps))
+total.steps
+
+```
+
+The Total Steps calculated above for each day is now shown pictorially via a histogram.
+
+```{r}
+
+hist(total.steps$totalSteps, breaks=20, xlab="Steps Taken", main="Histogram of Total Steps Taken", col="blue")
+
+```
+
+Here is the dataset showing the mean and median of steps taken per day:
+
+``` {r}
+
+summary.mean <- mean(total.steps$totalSteps)
+summary.median <- median(total.steps$totalSteps)
+
+summary.mean
+summary.median
+
+```
+
+### What is the average daily activity pattern?
+
+In this next section, the average daily activity pattern will be calculated for each 5-minute interval across all days.  What is being determined is which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps.  Based on the time-series plot, the 5-minute interval with the highest average of steps taken occurs around 8:35am each day.
+
+```{r}
+ 
+interval.mean <- ddply(na.omit(data), "interval", summarize,
+                 mean = mean(steps, na.rm=TRUE))
+                 
+with(interval.mean, plot(interval, mean, 
+                           type="l", 
+                           xaxt="n",
+                           xlab="Interval", 
+                           ylab = "Average No. of Steps", 
+                           xlim=c(0,2360),
+                           main="Average Number of Steps Per 5-Minute Interval"))
+axis(1, at=seq(0, 2360, by=100))
+
+```
+
+
+### Inputting missing values
+This next section examines the NA's that are in the dataset.  First off, let's count the number of NA's present in the dataset
+
+```{r}
+
+count.of.NAs <- sum(is.na(data))
+print(count.of.NAs)
+
+```
+
+In this next section, the NAs will be replaced with the mean value for that specific 5-minute interval.  This is achieved by first creating a separate dataset of all rows that do not contain nulls.  Next, another dataset that contains rows in which there are null values for the steps is then created.  Next, the mean value for each 5-minute interval is then calculated across all the days.  Then, using the interval value as the identifying attribute within each dataset, the null value of the "steps" column in the dataset containing the null values is then replaced with the mean value calculated.
+
+```{r}
+
+interval.mean <- ddply(na.omit(data), "interval", summarize,
+                       mean = mean(steps, na.rm=TRUE))
+
+data.nulls <- data[is.na(data$steps),]
+data.not.nulls <- na.omit(data)
+
+intval <- 0
+last.intval <- 2355
+while (intval <= last.intval) {
+        data.nulls[data.nulls$interval==intval,1] <- as.integer(interval.mean[interval.mean$interval==intval, 2])
+        intval <- intval + 5
+}
+
+data.not.nulls <- rbind(data.not.nulls, data.nulls)
+ordered.data <- data.not.nulls[order(data.not.nulls$date),]
+
+```
+
+Using the new dataset of complete values created above, this next section will then calculate the total number of steps taken per day with null values replaced.  
+
+``` {r}
+library(plyr)
+total.steps.mod <- ddply(ordered.data, c("date"), summarize, totalSteps = sum(steps))
+total.steps.mod
+
+```
+
+The histogram that follows will show that the total number of steps per day is higher in this dataset, now that all null values have been replaced with mean values.
+
+```{r}
+
+hist(total.steps.mod$totalSteps, breaks=20, xlab="Steps Taken", main="Modified Histogram of Total Steps Taken", col="lightyellow")
+
+```
+
+Despite having higher total-steps value calculated in the dataset above, the data shows that the reported values of both the mean and median are slightly lower.
+
+```{r}
+
+summaryMean.mod <- mean(total.steps.mod$totalSteps)
+summaryMedian.mod <- median(total.steps.mod$totalSteps)
+
+
+print(summaryMean.mod)
+print(summaryMedian.mod)
+
+```
+
+### Are there differences in activity patterns between weekdays and weekends?
+
+In this section, the dates in the dataset will be designated as either a "weekday" or a "weekend" as a new factor variable.  Once designated, the average number of steps taken across all weekdays or weekend days will be calculated for each 5-minute interval.
+
+
+```{r}
+
+ordered.data$day <- weekdays(as.Date(ordered.data$date))
+ordered.data$day <- as.factor(ordered.data$day)
+ordered.data$daydesig <- as.factor(ifelse(ordered.data$day %in% c("Saturday","Sunday"), "Weekend", "Weekday"))
+
+interval.mean.weekday <- ddply(ordered.data, c("interval", "daydesig"), summarize,
+                 mean = mean(steps))
+
+```
+
+Once the average number of steps taken across all weekdays or weekend days have been calculated for each 5-minute interval, the result set will then be plotted in a time-series plot (as shown below).
+
+```{r}
+
+library(ggplot2)
+weekplot <- ggplot(interval.mean.weekday, aes(x=interval, y=mean, group=daydesig, color=daydesig)) +
+        geom_line(size=.8) +
+        facet_grid(daydesig ~ .) + 
+        xlab("Interval") + ylab("Avg. Number of Steps") +
+        theme(legend.position="none") +
+        ggtitle("Average Activity Patterns")
+
+print(weekplot)
+
+```
+
